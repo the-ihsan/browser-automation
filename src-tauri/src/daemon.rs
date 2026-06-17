@@ -134,6 +134,14 @@ fn handle_message(app: &AppHandle, daemon: &DaemonHandle, msg: &Value) {
                     json!({ "channel": channel, "payload": payload }),
                 );
             }
+        } else if channel.starts_with("linkedin.posts.") {
+            if let Some(state) = app.try_state::<AppState>() {
+                crate::platforms::linkedin::handle(app, &state, channel, &payload);
+            }
+            let _ = app.emit(
+                "daemon://linkedin-posts",
+                json!({ "channel": channel, "payload": payload }),
+            );
         }
     }
 }

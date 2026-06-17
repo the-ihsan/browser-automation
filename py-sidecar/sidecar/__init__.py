@@ -14,6 +14,7 @@ from sidecar.transport import start, stop
 import sidecar.builtins as _builtins  # noqa: F401 — register handlers
 import browser.handlers as _browser_handlers  # noqa: F401 — register browser handlers
 import browser.sessions.handlers as _session_handlers  # noqa: F401 — register session handlers
+import linkedin.posts.handlers as _linkedin_posts_handlers  # noqa: F401 — register linkedin posts handlers
 
 __all__ = [
     "EventHandle",

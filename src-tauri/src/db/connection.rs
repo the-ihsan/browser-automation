@@ -1,12 +1,26 @@
 use std::path::Path;
 
+use diesel::connection::SimpleConnection;
 use diesel::prelude::*;
-use diesel::r2d2::{ConnectionManager, Pool};
+use diesel::r2d2::{ConnectionManager, CustomizeConnection, Pool};
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 
 pub type DbPool = Pool<ConnectionManager<SqliteConnection>>;
 
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
+
+#[derive(Debug)]
+struct SqliteConnectionCustomizer;
+
+impl CustomizeConnection<SqliteConnection, diesel::r2d2::Error> for SqliteConnectionCustomizer {
+    fn on_acquire(&self, conn: &mut SqliteConnection) -> Result<(), diesel::r2d2::Error> {
+        conn.batch_execute(
+            "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 5000;",
+        )
+        .map_err(diesel::r2d2::Error::QueryError)?;
+        Ok(())
+    }
+}
 
 pub fn establish_pool(db_path: &Path) -> Result<DbPool, String> {
     if let Some(parent) = db_path.parent() {
@@ -16,7 +30,8 @@ pub fn establish_pool(db_path: &Path) -> Result<DbPool, String> {
     let database_url = db_path.to_string_lossy().into_owned();
     let manager = ConnectionManager::<SqliteConnection>::new(database_url);
     let pool = Pool::builder()
-        .max_size(4)
+        .max_size(8)
+        .connection_customizer(Box::new(SqliteConnectionCustomizer))
         .build(manager)
         .map_err(|e| e.to_string())?;
 

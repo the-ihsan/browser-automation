@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, overload
 
 EventHandle = int
 EventHandler = Callable[[Any], None]
@@ -24,6 +24,14 @@ _lock = threading.Lock()
 _next_id = 1
 _events: list[_EventEntry] = []
 _requests: dict[str, RequestHandler] = {}
+
+
+@overload
+def on(channel: str, handler: EventHandler) -> EventHandle: ...
+
+
+@overload
+def on(channel: str) -> Callable[[EventHandler], EventHandler]: ...
 
 
 def on(
@@ -49,6 +57,14 @@ def off(handle: EventHandle) -> None:
     """Remove an event listener by the id returned from [`on`]."""
     with _lock:
         _events[:] = [entry for entry in _events if entry.id != handle]
+
+
+@overload
+def on_req(channel: str, handler: RequestHandler) -> RequestHandler: ...
+
+
+@overload
+def on_req(channel: str) -> Callable[[RequestHandler], RequestHandler]: ...
 
 
 def on_req(

@@ -4,11 +4,13 @@ import {
   Globe,
   LayoutDashboard,
   MessageCircle,
+  ScrollText,
   Users,
 } from "lucide-react";
 import type { ComponentType } from "react";
 
 import { BrowserToolPage } from "@/tools/browser/BrowserToolPage";
+import { LinkedInPostsPage } from "@/tools/linkedin/posts/LinkedInPostsPage";
 
 export type PlatformSlug = "core" | "linkedin" | "facebook" | "twitter";
 
@@ -49,13 +51,14 @@ export const tools: ToolDefinition[] = [
     component: BrowserToolPage,
   },
   {
-    id: "linkedin-profile-scraper",
+    id: "linkedin-posts-scrapper",
     platform: "linkedin",
-    slug: "profile-scraper",
-    name: "Profile Scraper",
-    description: "Extract public profile data from LinkedIn",
-    path: "/tools/linkedin/profile-scraper",
-    icon: Briefcase,
+    slug: "posts-scrapper",
+    name: "Posts scrapper",
+    description: "Scrape LinkedIn profile posts and browse results",
+    path: "/tools/linkedin/posts-scrapper",
+    icon: ScrollText,
+    component: LinkedInPostsPage,
   },
   {
     id: "facebook-page-scraper",

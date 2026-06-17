@@ -85,7 +85,10 @@ export function AppSidebar() {
                     <SidebarMenuItem key={tool.id}>
                       <SidebarMenuButton
                         render={<Link to={tool.path} />}
-                        isActive={location.pathname === tool.path}
+                        isActive={
+                          location.pathname === tool.path ||
+                          location.pathname.startsWith(`${tool.path}/`)
+                        }
                         tooltip={tool.name}
                       >
                         <tool.icon />

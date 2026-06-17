@@ -1,4 +1,5 @@
 pub mod db;
+pub mod linkedin_posts;
 pub mod sessions;
 
 use std::time::Duration;
@@ -19,7 +20,7 @@ fn daemon_unavailable(state: &AppState) -> String {
         .unwrap_or_else(|| "daemon is not running".into())
 }
 
-pub(super) fn do_request(
+pub(crate) fn do_request(
     state: &AppState,
     channel: &str,
     payload: Value,

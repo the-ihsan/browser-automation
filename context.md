@@ -85,6 +85,23 @@ Use dot-separated namespaces: `browser.launch`, `browser.stop`, `scrape.page`, e
 | `session.stop` | `{ session_id, session_dir, run_id? }` | `SessionRun` |
 | `session.check` | `{ session_id, session_dir, check_url }` | `{ ok, logged_in, url, cookie_count, … }` |
 
+### Registered Python request channels (LinkedIn posts)
+
+| Channel | Payload | Returns |
+|---------|---------|---------|
+| `linkedin.posts.run.start` | `{ run_id, profile_url, sessions[], headless?, post_count?, start_from?, post_matcher?, initial_post_ids?, resume_from_ordinal?, existing_post_ids? }` | `{ ok, run_id }` |
+
+### LinkedIn posts events (Python → Rust → UI)
+
+| Channel | Direction | Purpose |
+|---------|-----------|---------|
+| `linkedin.posts.run.control` | Rust→Python | `{ run_id, action: pause\|resume\|stop }` |
+| `linkedin.posts.run.post` | Python→Rust | `{ run_id, post, ordinal, matched, session_id }` — Rust persists to DB |
+| `linkedin.posts.run.anchor` | Python→Rust | `{ run_id, initial_top_post_id, initial_post_ids }` |
+| `linkedin.posts.run.progress` | Python→Rust | `{ run_id, collected, matched, url }` |
+| `linkedin.posts.run.finished` | Python→Rust | `{ run_id, ok, error? }` |
+| `linkedin.posts.run.error` | Python→Rust | Session rotation signal |
+
 Cookies persist as Playwright `storage_state.json` under `{app_data_dir}/sessions/{session_id}/`. Load on launch (unless `fresh: true`); save on stop and when the user closes the browser window.
 
 ### BrowserRun shape
@@ -108,6 +125,7 @@ Each browser session gets a unique `run_id`. Pass it on stop/status/recover to t
 |-------------|------|
 | `daemon://browser` | Python emits `browser.*` event (payload includes channel + payload) |
 | `daemon://session` | Python emits `session.*` event (e.g. `session.closed` when user closes the window) |
+| `daemon://linkedin-posts` | Python emits `linkedin.posts.*` event (scrape progress, posts, finished) |
 
 ---
 
@@ -125,24 +143,29 @@ playwright-tools/
 │   │   └── ui/               # shadcn components (prefer CLI: pnpm dlx shadcn@latest add …)
 │   ├── lib/
 │   │   ├── api.ts            # Tauri invoke wrappers + event subscriptions
+│   │   ├── linkedin/posts/api.ts  # LinkedIn posts scraper invoke + events
 │   │   ├── sessions/api.ts   # Session CRUD + launch/check
 │   │   ├── tools/registry.ts # Platform + tool definitions (hardcoded sidebar nav)
 │   │   └── utils.ts          # cn() etc.
 │   ├── tools/
 │   │   ├── browser/          # Core browser control tool
+│   │   ├── linkedin/posts/   # LinkedIn posts scraper UI
 │   │   ├── sessions/         # Per-platform session management UI
 │   │   └── shared/           # ToolPage router, placeholders
 │   └── store/
 │       ├── browserSlice.ts
+│       ├── linkedin/postsSlice.ts
 │       ├── sessionsSlice.ts
 │       └── setupSlice.ts
 ├── src-tauri/src/
-│   ├── db/                   # Diesel — sessions table only
-│   ├── commands/             # comm, db, sessions
+│   ├── db/                   # Diesel — sessions + linkedin_posts_runs tables
+│   ├── commands/             # comm, db, sessions, linkedin_posts
+│   ├── platforms/linkedin/   # Run orchestrator + event handlers
 │   └── …
 ├── py-sidecar/browser/
 │   ├── manager.py              # Core single-browser tool
 │   └── sessions/               # Per-session browsers + cookie files
+├── py-sidecar/linkedin/posts/  # LinkedIn profile posts scraper
 ├── pyproject.toml            # uv, playwright dep, pyright config
 └── package.json              # pnpm, Tauri, Vite, Redux, shadcn
 ```
@@ -242,9 +265,9 @@ When adding Rust-side handlers (`sidecar/builtins.rs`), keep channel names and p
 - **Location:** `{app_data_dir}/playwright-tools.db` (created on first launch).
 - **Cookie files:** `{app_data_dir}/sessions/{session_id}/storage_state.json` (not in DB).
 - **Migrations:** `src-tauri/migrations/` — embedded at runtime via `diesel_migrations`.
-- **Schema:** `sessions` table — `id`, `platform`, `name`, `status`, `active_run_id`, `last_checked_at`, timestamps. Tools/platforms are **not** in the DB; they live in `src/lib/tools/registry.ts`.
-- **Module:** `src-tauri/src/db/` — `connection.rs`, `schema.rs`, `models.rs`, `sessions.rs`.
-- **Tauri commands:** `sessions_list`, `sessions_create`, `sessions_delete`, `sessions_launch`, `sessions_check`, `db_health`.
+- **Schema:** `sessions` table — `id`, `platform`, `name`, `status`, `active_run_id`, `last_checked_at`, timestamps. `linkedin_posts_runs` + `linkedin_posts_runs_item` — scrape run metadata and scraped posts. Tools/platforms are **not** in the DB; they live in `src/lib/tools/registry.ts`.
+- **Module:** `src-tauri/src/db/` — `connection.rs`, `schema.rs`, `models.rs`, `sessions.rs`, `linkedin_posts.rs`.
+- **Tauri commands:** `sessions_list`, `sessions_create`, `sessions_delete`, `sessions_launch`, `sessions_check`, `db_health`, `linkedin_posts_runs_list`, `linkedin_posts_runs_get`, `linkedin_posts_runs_items_list`, `linkedin_posts_run_create`, `linkedin_posts_run_pause`, `linkedin_posts_run_resume`, `linkedin_posts_run_stop`, `linkedin_posts_run_restart`.
 
 ### New migration
 
@@ -343,6 +366,11 @@ uv run pyright py-sidecar/   # Type-check Python
 | Frontend API | `src/lib/api.ts` |
 | Browser Redux state | `src/store/browserSlice.ts` |
 | Tool registry / sidebar | `src/lib/tools/registry.ts` |
+| LinkedIn posts scraper UI | `src/tools/linkedin/posts/LinkedInPostsScraperPage.tsx` |
+| LinkedIn posts Redux | `src/store/linkedin/postsSlice.ts` |
+| LinkedIn posts API | `src/lib/linkedin/posts/api.ts` |
+| LinkedIn posts orchestrator | `src-tauri/src/platforms/linkedin/orchestrator.rs` |
+| LinkedIn posts Python scraper | `py-sidecar/linkedin/posts/scraper.py` |
 | Session management UI | `src/tools/sessions/PlatformSessionsPage.tsx` |
 | Session Redux state | `src/store/sessionsSlice.ts` |
 | Session API | `src/lib/sessions/api.ts` |

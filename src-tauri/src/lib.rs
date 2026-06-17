@@ -1,6 +1,7 @@
 mod commands;
 mod daemon;
 mod db;
+mod platforms;
 mod sidecar;
 mod state;
 
@@ -9,7 +10,8 @@ use std::sync::Arc;
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Manager, RunEvent};
 
-use crate::db::{establish_pool, reset_running_on_startup};
+use crate::db::{establish_pool, reset_running_on_startup, reset_running_runs_on_startup};
+use crate::platforms::linkedin::OrchestratorRegistry;
 use crate::state::{AppState, DaemonHandle};
 
 fn build_state(app: &AppHandle) -> Result<AppState, String> {
@@ -25,6 +27,7 @@ fn build_state(app: &AppHandle) -> Result<AppState, String> {
     let db_path = data_dir.join("playwright-tools.db");
     let db = establish_pool(&db_path)?;
     reset_running_on_startup(&db)?;
+    reset_running_runs_on_startup(&db)?;
 
     let sidecar_bundle = app
         .path()
@@ -39,6 +42,7 @@ fn build_state(app: &AppHandle) -> Result<AppState, String> {
         dev: cfg!(debug_assertions),
         db,
         db_path,
+        linkedin_orchestrator: Arc::new(OrchestratorRegistry::new()),
     })
 }
 
@@ -72,6 +76,15 @@ pub fn run() {
             commands::sessions::sessions_launch,
             commands::sessions::sessions_check,
             commands::sessions::sessions_get_cookies,
+            commands::linkedin_posts::linkedin_posts_runs_list,
+            commands::linkedin_posts::linkedin_posts_runs_get,
+            commands::linkedin_posts::linkedin_posts_runs_items_list,
+            commands::linkedin_posts::linkedin_posts_run_create,
+            commands::linkedin_posts::linkedin_posts_run_pause,
+            commands::linkedin_posts::linkedin_posts_run_resume,
+            commands::linkedin_posts::linkedin_posts_run_stop,
+            commands::linkedin_posts::linkedin_posts_run_restart,
+            commands::linkedin_posts::linkedin_posts_run_delete,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

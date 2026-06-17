@@ -3,6 +3,7 @@ use std::process::{Child, ChildStdin};
 use std::sync::{Arc, Mutex};
 
 use crate::db::DbPool;
+use crate::platforms::linkedin::OrchestratorRegistry;
 
 /// Shared handle to the long-running Python daemon process.
 pub struct DaemonHandle {
@@ -29,4 +30,5 @@ pub struct AppState {
     pub dev: bool,
     pub db: DbPool,
     pub db_path: PathBuf,
+    pub linkedin_orchestrator: Arc<OrchestratorRegistry>,
 }

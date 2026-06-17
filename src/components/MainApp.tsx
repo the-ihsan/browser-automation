@@ -14,7 +14,7 @@ export function MainApp() {
           path="platforms/:platform/sessions"
           element={<PlatformSessionsPage />}
         />
-        <Route path="tools/:platform/:toolSlug" element={<ToolPage />} />
+        <Route path="tools/:platform/:toolSlug/*" element={<ToolPage />} />
         <Route path="*" element={<Navigate to={defaultToolPath} replace />} />
       </Route>
     </Routes>
