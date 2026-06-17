@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "playwright-tools",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "identifier": "com.me.playwright-tools",
   "build": {
     "beforeDevCommand": "pnpm dev:ui",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "playwright-tools",
+        "title": "Automation Tools",
         "width": 800,
         "height": 600
       }
