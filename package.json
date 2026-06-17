@@ -2,12 +2,14 @@
   "name": "playwright-tools",
   "private": true,
   "version": "0.1.0",
+  "packageManager": "pnpm@11.5.2",
   "type": "module",
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",
     "dev:ui": "vite",
     "build:ui": "tsc && vite build",
+    "build:daemon": "uv sync --group build && uv run --group build pyinstaller py-sidecar/playwright-tools-daemon.spec --noconfirm --distpath src-tauri/resources/sidecar --workpath build/pyinstaller",
     "tauri": "tauri"
   },
   "dependencies": {

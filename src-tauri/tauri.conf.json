@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "pnpm dev:ui",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build:ui",
+    "beforeBuildCommand": "pnpm build:daemon && pnpm build:ui",
     "frontendDist": "../dist"
   },
   "app": {
@@ -24,6 +24,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "resources": {
+      "resources/sidecar/**/*": "sidecar/"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

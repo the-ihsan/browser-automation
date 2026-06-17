@@ -35,13 +35,11 @@ fn build_state(app: &AppHandle) -> Result<AppState, String> {
         .unwrap_or_else(|_| data_dir.join("sidecar"));
 
     Ok(AppState {
-        data_dir,
         sessions_dir,
         sidecar_bundle,
         daemon: Arc::new(DaemonHandle::default()),
         dev: cfg!(debug_assertions),
         db,
-        db_path,
         linkedin_orchestrator: Arc::new(OrchestratorRegistry::new()),
     })
 }

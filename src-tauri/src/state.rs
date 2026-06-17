@@ -23,12 +23,10 @@ impl Default for DaemonHandle {
 }
 
 pub struct AppState {
-    pub data_dir: PathBuf,
     pub sessions_dir: PathBuf,
     pub sidecar_bundle: PathBuf,
     pub daemon: Arc<DaemonHandle>,
     pub dev: bool,
     pub db: DbPool,
-    pub db_path: PathBuf,
     pub linkedin_orchestrator: Arc<OrchestratorRegistry>,
 }
