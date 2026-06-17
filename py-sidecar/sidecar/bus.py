@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-import sys
 from typing import Any
 
 from sidecar.registry import dispatch_event, get_request_handler
-from sidecar.transport import new_request_id, send_message, trace
+from sidecar.transport import new_request_id, send_message
 
 _pending: dict[str, asyncio.Future[Any]] = {}
 
@@ -24,7 +23,6 @@ async def send_req(
     fut: asyncio.Future[Any] = loop.create_future()
     _pending[req_id] = fut
 
-    trace(f"sending request ({req_id})")
     send_message(
         {
             "kind": "request",
@@ -45,7 +43,6 @@ async def send_req(
 
 def emit(channel: str, payload: Any = None) -> bool:
     """Broadcast an event to the Rust host."""
-    trace(f"event {channel} sent")
     return send_message(
         {
             "kind": "event",
@@ -59,21 +56,11 @@ def ingest(msg: dict[str, Any]) -> None:
     """Route an incoming NDJSON message from the Rust host."""
     kind = msg.get("kind")
     if kind == "event":
-        channel = msg.get("channel", "")
-        trace(f"event {channel} received")
         dispatch_event(msg)
     elif kind == "response":
-        req_id = msg.get("id", "")
-        channel = msg.get("channel", "")
-        trace(f"response received ({req_id})")
         _complete_response(msg)
     elif kind == "request":
-        req_id = msg.get("id", "")
-        channel = msg.get("channel", "")
-        trace(f"received request ({req_id})")
         asyncio.get_event_loop().create_task(_dispatch_request(msg))
-    else:
-        print(f"[sidecar] unknown message kind: {kind}", file=sys.stderr, flush=True)
 
 
 async def _dispatch_request(msg: dict[str, Any]) -> None:
@@ -83,7 +70,6 @@ async def _dispatch_request(msg: dict[str, Any]) -> None:
 
     handler = get_request_handler(channel)
     if handler is None:
-        trace(f"responding to {req_id}")
         send_message(
             {
                 "kind": "response",
@@ -98,7 +84,6 @@ async def _dispatch_request(msg: dict[str, Any]) -> None:
         result = handler(payload)
         if asyncio.iscoroutine(result):
             result = await result
-        trace(f"responding to {req_id}")
         send_message(
             {
                 "kind": "response",
@@ -108,7 +93,6 @@ async def _dispatch_request(msg: dict[str, Any]) -> None:
             }
         )
     except Exception as exc:
-        trace(f"responding to {req_id}")
         send_message(
             {
                 "kind": "response",

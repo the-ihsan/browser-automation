@@ -44,7 +44,6 @@ class Daemon:
         asyncio.set_event_loop(loop)
 
         start()
-        print("[sidecar] daemon ready", file=sys.stderr, flush=True)
         threading.Thread(
             target=self._read_stdin, args=(loop,), name="stdin-reader", daemon=True
         ).start()

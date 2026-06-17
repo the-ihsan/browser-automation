@@ -42,8 +42,8 @@ def send_message(msg: dict[str, Any]) -> bool:
     return True
 
 
-def trace(message: str) -> None:
-    print(f"[sidecar] {message}", file=sys.stderr, flush=True)
+def trace(_message: str) -> None:
+    """No-op — enable here when debugging sidecar traffic."""
 
 
 _request_counter = 0

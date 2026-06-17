@@ -3,10 +3,13 @@ name = "playwright-tools-daemon"
 version = "0.1.0"
 description = "Python daemon for the playwright-tools Tauri app"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = ["playwright>=1.49"]
 
 [dependency-groups]
 build = ["pyinstaller>=6.10"]
+dev = [
+    "pyright>=1.1.410",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -17,3 +20,9 @@ packages = ["py-sidecar/sidecar"]
 
 [tool.uv]
 package = false
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+extraPaths = ["py-sidecar"]
+pythonVersion = "3.11"

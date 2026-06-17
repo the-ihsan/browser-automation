@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 pub struct DaemonHandle {
     pub stdin: Mutex<Option<ChildStdin>>,
     pub child: Mutex<Option<Child>>,
-    pub trace_emit: Mutex<Option<Box<dyn Fn(String) + Send + Sync>>>,
+    pub spawn_error: Mutex<Option<String>>,
 }
 
 impl Default for DaemonHandle {
@@ -14,7 +14,7 @@ impl Default for DaemonHandle {
         Self {
             stdin: Mutex::new(None),
             child: Mutex::new(None),
-            trace_emit: Mutex::new(None),
+            spawn_error: Mutex::new(None),
         }
     }
 }

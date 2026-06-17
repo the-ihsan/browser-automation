@@ -6,6 +6,16 @@ use tauri::State;
 use crate::sidecar;
 use crate::state::AppState;
 
+fn daemon_unavailable(state: &AppState) -> String {
+    state
+        .daemon
+        .spawn_error
+        .lock()
+        .unwrap()
+        .clone()
+        .unwrap_or_else(|| "daemon is not running".into())
+}
+
 fn do_request(
     state: &AppState,
     channel: &str,
@@ -18,6 +28,13 @@ fn do_request(
         payload,
         Duration::from_millis(timeout_ms),
     )
+    .map_err(|e| {
+        if e == "daemon is not running" {
+            daemon_unavailable(state)
+        } else {
+            e
+        }
+    })
 }
 
 #[tauri::command]
@@ -34,7 +51,7 @@ pub fn comm_emit(
     if sidecar::emit(&state.daemon, &channel, payload) {
         Ok(())
     } else {
-        Err("daemon is not running".into())
+        Err(daemon_unavailable(&state))
     }
 }
 

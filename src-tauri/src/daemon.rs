@@ -45,15 +45,7 @@ pub fn build_cmd(state: &AppState) -> Result<Command, String> {
     Ok(cmd)
 }
 
-pub fn spawn(app: AppHandle, daemon: Arc<DaemonHandle>, mut cmd: Command) {
-    *daemon.trace_emit.lock().unwrap() = Some(Box::new({
-        let app = app.clone();
-        move |message| {
-            let _ = app.emit("daemon://comm", json!({ "message": message, "side": "rust" }));
-        }
-    }));
-
-    sidecar::init();
+pub fn spawn(_app: AppHandle, daemon: Arc<DaemonHandle>, mut cmd: Command) {
 
     thread::spawn(move || {
         cmd.stdin(Stdio::piped())
@@ -63,20 +55,12 @@ pub fn spawn(app: AppHandle, daemon: Arc<DaemonHandle>, mut cmd: Command) {
         let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
-                let msg = format!("failed to spawn daemon: {e}");
+                let msg = format!("failed to spawn: {e}");
                 eprintln!("[daemon] {msg}");
-                let _ = app.emit(
-                    "daemon://comm",
-                    json!({ "message": msg, "side": "rust" }),
-                );
+                *daemon.spawn_error.lock().unwrap() = Some(msg);
                 return;
             }
         };
-
-        let _ = app.emit(
-            "daemon://comm",
-            json!({ "message": "daemon process started", "side": "rust" }),
-        );
 
         let stdout = child.stdout.take().expect("daemon stdout pipe");
         let stderr = child.stderr.take().expect("daemon stderr pipe");
@@ -85,14 +69,12 @@ pub fn spawn(app: AppHandle, daemon: Arc<DaemonHandle>, mut cmd: Command) {
         *daemon.stdin.lock().unwrap() = stdin;
         *daemon.child.lock().unwrap() = Some(child);
 
+        // Drain stderr so a full pipe cannot block the daemon process.
         thread::spawn(move || {
-            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
-                if !line.trim().is_empty() {
-                    eprintln!("[daemon] {line}");
-                }
-            }
+            for _ in BufReader::new(stderr).lines().map_while(Result::ok) {}
         });
 
+        let app = _app;
         let mut reader = BufReader::new(stdout);
         let mut buf = Vec::new();
         loop {
@@ -107,18 +89,13 @@ pub fn spawn(app: AppHandle, daemon: Arc<DaemonHandle>, mut cmd: Command) {
             if trimmed.is_empty() {
                 continue;
             }
-            match serde_json::from_str::<Value>(trimmed) {
-                Ok(v) => handle_message(&app, &daemon, &v),
-                Err(e) => eprintln!("[daemon] parse error ({e}): {trimmed}"),
+            if let Ok(v) = serde_json::from_str::<Value>(trimmed) {
+                handle_message(&app, &daemon, &v);
             }
         }
 
         *daemon.stdin.lock().unwrap() = None;
-        eprintln!("[daemon] process exited");
-        let _ = app.emit(
-            "daemon://comm",
-            json!({ "message": "daemon process exited", "side": "rust" }),
-        );
+        *daemon.spawn_error.lock().unwrap() = Some("daemon process exited".into());
     });
 }
 
@@ -143,6 +120,11 @@ fn handle_message(app: &AppHandle, daemon: &DaemonHandle, msg: &Value) {
                 .unwrap_or("")
                 .to_string();
             let _ = app.emit("daemon://hello", json!({ "message": message }));
+        } else if channel.starts_with("browser.") {
+            let _ = app.emit(
+                "daemon://browser",
+                json!({ "channel": channel, "payload": payload }),
+            );
         }
     }
 }

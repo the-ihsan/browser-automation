@@ -32,12 +32,10 @@ where
     F: Fn(P) + Send + Sync + 'static,
 {
     let channel = channel.into();
-    let channel_log = channel.clone();
     let id = NEXT_EVENT_ID.fetch_add(1, Ordering::Relaxed);
     let cb: EventCallback = Arc::new(move |value| {
-        match serde_json::from_value::<P>(value.clone()) {
-            Ok(payload) => callback(payload),
-            Err(e) => eprintln!("[sidecar] event '{channel_log}' deserialize error: {e}"),
+        if let Ok(payload) = serde_json::from_value::<P>(value.clone()) {
+            callback(payload);
         }
     });
     EVENT_REGISTRY
