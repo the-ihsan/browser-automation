@@ -19,6 +19,8 @@ export type BrowserInstallResult = {
   error?: string;
 };
 
+export const dbHealth = () => invoke<string>("db_health");
+
 export const sayHello = () => invoke<HelloResponse>("say_hello");
 
 export const commEmit = (channel: string, payload: unknown = null) =>

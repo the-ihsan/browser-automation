@@ -1,3 +1,6 @@
+pub mod db;
+pub mod sessions;
+
 use std::time::Duration;
 
 use serde_json::{json, Value};
@@ -16,7 +19,7 @@ fn daemon_unavailable(state: &AppState) -> String {
         .unwrap_or_else(|| "daemon is not running".into())
 }
 
-fn do_request(
+pub(super) fn do_request(
     state: &AppState,
     channel: &str,
     payload: Value,

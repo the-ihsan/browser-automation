@@ -1,10 +1,12 @@
 import { configureStore } from "@reduxjs/toolkit";
 import browserReducer from "./browserSlice";
+import sessionsReducer from "./sessionsSlice";
 import setupReducer from "./setupSlice";
 
 export const store = configureStore({
   reducer: {
     browser: browserReducer,
+    sessions: sessionsReducer,
     setup: setupReducer,
   },
 });

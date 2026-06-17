@@ -35,7 +35,7 @@ This document describes the architecture, requirements, and coding rules for AI 
 | Layer | Owns | Must NOT own |
 |-------|------|--------------|
 | **React (`src/`)** | UI, client state, user interactions | Playwright, browser process, scraping logic |
-| **Rust (`src-tauri/`)** | Process spawn/kill, NDJSON I/O, thin Tauri bridge | Business logic, Playwright |
+| **Rust (`src-tauri/`)** | Process spawn/kill, NDJSON I/O, thin Tauri bridge, local SQLite (Diesel) | Business logic, Playwright |
 | **Python sidecar (`py-sidecar/sidecar/`)** | Message bus, handler registry, transport | UI concerns |
 | **Python browser (`py-sidecar/browser/`)** | Playwright lifecycle, page actions, scrape results | Tauri/Rust/React details |
 
@@ -77,6 +77,16 @@ Use dot-separated namespaces: `browser.launch`, `browser.stop`, `scrape.page`, e
 | `browser.install.status` | `{}` | `{ ok: boolean, installed: boolean }` |
 | `browser.install.run` | `{}` | `{ ok: boolean, installed: boolean, error?: string }` |
 
+### Registered Python request channels (sessions)
+
+| Channel | Payload | Returns |
+|---------|---------|---------|
+| `session.launch` | `{ session_id, session_dir, headless?, fresh? }` | `SessionRun` (+ `session_id`) |
+| `session.stop` | `{ session_id, session_dir, run_id? }` | `SessionRun` |
+| `session.check` | `{ session_id, session_dir, check_url }` | `{ ok, logged_in, url, cookie_count, … }` |
+
+Cookies persist as Playwright `storage_state.json` under `{app_data_dir}/sessions/{session_id}/`. Load on launch (unless `fresh: true`); save on stop and when the user closes the browser window.
+
 ### BrowserRun shape
 
 ```typescript
@@ -97,6 +107,7 @@ Each browser session gets a unique `run_id`. Pass it on stop/status/recover to t
 | Tauri event | When |
 |-------------|------|
 | `daemon://browser` | Python emits `browser.*` event (payload includes channel + payload) |
+| `daemon://session` | Python emits `session.*` event (e.g. `session.closed` when user closes the window) |
 
 ---
 
@@ -108,37 +119,30 @@ playwright-tools/
 │   ├── App.tsx               # Startup gate: checking → setup → main app
 │   ├── components/
 │   │   ├── CheckingScreen.tsx
-│   │   ├── MainApp.tsx       # Browser launch/stop UI
+│   │   ├── MainApp.tsx       # Dashboard routes (sidebar + tool pages)
 │   │   ├── SetupScreen.tsx   # First-run Chromium install
+│   │   ├── layout/           # DashboardLayout, AppSidebar
 │   │   └── ui/               # shadcn components (prefer CLI: pnpm dlx shadcn@latest add …)
 │   ├── lib/
 │   │   ├── api.ts            # Tauri invoke wrappers + event subscriptions
+│   │   ├── sessions/api.ts   # Session CRUD + launch/check
+│   │   ├── tools/registry.ts # Platform + tool definitions (hardcoded sidebar nav)
 │   │   └── utils.ts          # cn() etc.
+│   ├── tools/
+│   │   ├── browser/          # Core browser control tool
+│   │   ├── sessions/         # Per-platform session management UI
+│   │   └── shared/           # ToolPage router, placeholders
 │   └── store/
-│       ├── index.ts          # configureStore
-│       ├── hooks.ts          # useAppDispatch, useAppSelector
-│       ├── browserSlice.ts   # browser domain state + thunks
-│       └── setupSlice.ts     # Chromium install check + first-run setup
+│       ├── browserSlice.ts
+│       ├── sessionsSlice.ts
+│       └── setupSlice.ts
 ├── src-tauri/src/
-│   ├── lib.rs                # App setup, daemon spawn on start, kill on exit
-│   ├── daemon.rs             # Spawn/kill Python, stdout/stderr pipes
-│   ├── state.rs              # AppState, DaemonHandle
-│   ├── commands/mod.rs       # Tauri commands (thin bridge to sidecar bus)
-│   └── sidecar/              # Rust mirror of Python bus (bus, registry, transport)
-├── py-sidecar/
-│   ├── sidecar/
-│   │   ├── daemon.py         # Entrypoint (stdin reader thread + asyncio loop)
-│   │   ├── bus.py            # ingest, emit, send_req
-│   │   ├── registry.py       # on, on_req, dispatch_event
-│   │   ├── transport.py      # NDJSON stdout writer; trace() is no-op stub
-│   │   └── builtins.py       # Test/demo handlers
-│   └── browser/
-│       ├── handlers.py       # @registry.on_req — thin, delegates to manager
-│       ├── manager.py        # BrowserManager — atomic start/recover/stop
-│       ├── launch.py         # Chromium launch kwargs
-│       ├── install.py        # Playwright install + executable_path check
-│       ├── pages.py          # Page helpers
-│       └── errors.py         # is_recoverable_browser_error()
+│   ├── db/                   # Diesel — sessions table only
+│   ├── commands/             # comm, db, sessions
+│   └── …
+├── py-sidecar/browser/
+│   ├── manager.py              # Core single-browser tool
+│   └── sessions/               # Per-session browsers + cookie files
 ├── pyproject.toml            # uv, playwright dep, pyright config
 └── package.json              # pnpm, Tauri, Vite, Redux, shadcn
 ```
@@ -151,7 +155,7 @@ playwright-tools/
 
 - **Playwright is not bundled.** Browser binaries install via `python -m playwright install chromium` (`browser/install.py`). Install detection uses Playwright's `chromium.executable_path` — no manual cache path logic. On app startup the UI calls `browser.install.status`; if Chromium is missing, a setup screen runs `browser.install.run`.
 - **Cross-platform:** Linux, macOS, Windows. Use `chromium_launch_kwargs()` in `browser/launch.py` for container-safe flags.
-- **Atomic browser control:** Only `BrowserManager` launches/stops/recovers the browser. Handlers and future scrapers receive pages via the manager; use `recover()` for in-process restart on failure.
+- **Atomic browser control:** `BrowserManager` (core tool) and `SessionManager` (persisted sessions) each own their browser lifecycle. Handlers stay thin; domain logic lives in `manager.py` / `sessions/manager.py`.
 - **Dev:** `uv run python py-sidecar/sidecar/daemon.py` (spawned automatically by `pnpm dev`).
 - **Prod:** PyInstaller binary `playwright-tools-daemon` under `resources/sidecar/` (build script TBD).
 
@@ -210,20 +214,44 @@ Do not register handlers inside `daemon.py` or `bus.py`.
 
 ### 6. Rust commands stay thin
 
-`commands/mod.rs` forwards to `sidecar::send_req` / `sidecar::emit`. Add a dedicated Tauri command only when the UI needs Rust-native behavior (filesystem, windows). Otherwise use generic `comm_request(channel, payload)`.
+`commands/mod.rs` forwards to `sidecar::send_req` / `sidecar::emit`. Database access lives in `db/` and is exposed via dedicated commands in `commands/db.rs`. Add a dedicated Tauri command only when the UI needs Rust-native behavior (filesystem, windows, DB). Otherwise use generic `comm_request(channel, payload)`.
 
-### 7. Separate slices by domain
+### 7. Modular tools on the frontend
+
+- **Registry:** `src/lib/tools/registry.ts` lists platforms and tools (sidebar source of truth for navigation). Omit `component` for unimplemented tools — `ToolPage` renders a placeholder.
+- **Tool pages:** `src/tools/<platform>/` or `src/tools/<name>/` — one module per tool; wire `component` in the registry.
+- **Layout:** `DashboardLayout` + `AppSidebar` — do not embed tool UIs directly in layout components.
+
+### 8. Separate slices by domain
 
 One Redux slice per domain (`browserSlice`, future `scrapeSlice`). Do not put unrelated state in one slice.
 
-### 8. Events for push; requests for pull
+### 9. Events for push; requests for pull
 
 - **Request/response:** commands with a return value (launch, stop, status, scrape result).
 - **Events:** unsolicited updates (browser closed, progress). Emit from Python; forward in `daemon.rs` if UI needs them.
 
-### 9. Mirror bus/registry in Rust and Python
+### 10. Mirror bus/registry in Rust and Python
 
 When adding Rust-side handlers (`sidecar/builtins.rs`), keep channel names and payload shapes identical to Python. The two registries are symmetric but independent.
+
+---
+
+## Local database (Diesel + SQLite)
+
+- **Location:** `{app_data_dir}/playwright-tools.db` (created on first launch).
+- **Cookie files:** `{app_data_dir}/sessions/{session_id}/storage_state.json` (not in DB).
+- **Migrations:** `src-tauri/migrations/` — embedded at runtime via `diesel_migrations`.
+- **Schema:** `sessions` table — `id`, `platform`, `name`, `status`, `active_run_id`, `last_checked_at`, timestamps. Tools/platforms are **not** in the DB; they live in `src/lib/tools/registry.ts`.
+- **Module:** `src-tauri/src/db/` — `connection.rs`, `schema.rs`, `models.rs`, `sessions.rs`.
+- **Tauri commands:** `sessions_list`, `sessions_create`, `sessions_delete`, `sessions_launch`, `sessions_check`, `db_health`.
+
+### New migration
+
+```bash
+cd src-tauri && diesel migration generate <name>   # requires diesel-cli
+cd src-tauri && diesel migration run               # dev only; app runs pending migrations on startup
+```
 
 ---
 
@@ -265,12 +293,14 @@ Example: add `scrape.navigate` request.
 
 1. Add typed wrapper in `src/lib/api.ts`.
 2. Add slice or extend existing slice with thunk + selectors in `src/store/`.
-3. Build UI in a component; wire via `useAppDispatch` / `useAppSelector`.
+3. Register tool in `src/lib/tools/registry.ts` (platform group + optional `component`).
+4. Create page under `src/tools/<platform>/` or `src/tools/<name>/`.
+5. Tool appears in sidebar automatically via registry; routing is `/tools/:platform/:toolSlug`.
 
 ### Rust (only if needed)
 
-- Generic `comm_request` is enough for most features.
-- Add Rust handler in `sidecar/builtins.rs` only for host-native operations.
+- Generic `comm_request` is enough for most automation features.
+- Persisted data → add Diesel migration + `db/` query functions + `commands/db.rs` command.
 - Forward new Python events in `daemon.rs` if UI must react in real time.
 
 ---
@@ -312,6 +342,13 @@ uv run pyright py-sidecar/   # Type-check Python
 | Tauri commands | `src-tauri/src/commands/mod.rs` |
 | Frontend API | `src/lib/api.ts` |
 | Browser Redux state | `src/store/browserSlice.ts` |
+| Tool registry / sidebar | `src/lib/tools/registry.ts` |
+| Session management UI | `src/tools/sessions/PlatformSessionsPage.tsx` |
+| Session Redux state | `src/store/sessionsSlice.ts` |
+| Session API | `src/lib/sessions/api.ts` |
+| Dashboard layout | `src/components/layout/DashboardLayout.tsx` |
+| Local DB (sessions) | `src-tauri/src/db/sessions.rs` |
+| Cookie persistence | `py-sidecar/browser/sessions/manager.py` |
 
 ---
 

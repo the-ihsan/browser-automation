@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::thread;
 
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::sidecar;
 use crate::state::{AppState, DaemonHandle};
@@ -125,6 +125,15 @@ fn handle_message(app: &AppHandle, daemon: &DaemonHandle, msg: &Value) {
                 "daemon://browser",
                 json!({ "channel": channel, "payload": payload }),
             );
+        } else if channel.starts_with("session.") {
+            if let Some(state) = app.try_state::<AppState>() {
+                crate::commands::sessions::handle_session_event(app, &state, channel, &payload);
+            } else {
+                let _ = app.emit(
+                    "daemon://session",
+                    json!({ "channel": channel, "payload": payload }),
+                );
+            }
         }
     }
 }
